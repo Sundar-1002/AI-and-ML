@@ -19,29 +19,25 @@ Evaluation Metrics: Accuracy, precision, recall, F1-score, and confusion matrice
 Key Files
 1. Logistic Regression and Neural Network Comparison.qmd
 
-Task: Classify bat families using acoustic features.
+  Task: Classify bat families using acoustic features.
 
-Results:
+  Results: Neural Network (20 hidden neurons) achieved 91.4% accuracy on test data.
 
-Neural Network (20 hidden neurons) achieved 91.4% accuracy on test data.
-
-PCA + Logistic Regression: 87.5% accuracy.
+  PCA + Logistic Regression: 87.5% accuracy.
 
 2. Neural Network and CNN Model Comparison with Regularization.qmd
 
-Task: Recognize 19 human activities from motion sensor data.
+  Task: Recognize 19 human activities from motion sensor data.
 
-Results:
+  Results: CNN model achieved 98% accuracy, outperforming DNNs.
 
-CNN model achieved 98% accuracy, outperforming DNNs.
+  Challenging activities: moving_elevator (F1: 0.91).
 
-Challenging activities: moving_elevator (F1: 0.91).
-
-Easiest activities: walking, sitting (F1: 1.0).
+  Easiest activities: walking, sitting (F1: 1.0).
 
 Technical Stack
-Languages: R (for PCA/Logistic Regression), Python (Keras/TensorFlow for neural networks).
+- Languages: R (for PCA/Logistic Regression), Python (Keras/TensorFlow for neural networks).
 
-Libraries: nnet, keras, tensorflow, caret.
+- Libraries: nnet, keras, tensorflow, caret.
 
-Methods: Cross-validation, hyperparameter tuning, one-hot encoding.
+- Methods: Cross-validation, hyperparameter tuning, one-hot encoding.
