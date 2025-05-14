@@ -1,0 +1,258 @@
+---
+title: "Machine Learning and AI - Assignment 2"
+author: "Sundararajan Srinivasan"
+format: pdf
+editor: visual
+---
+
+## Exercise 2 – Data analysis
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+library(keras)
+library(tensorflow)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+load("data_assignment_2_activity_recognition.RData")
+```
+
+### Question 1
+
+```{r, warning=FALSE}
+set.seed(123)
+N = nrow(x)
+n_train = N * 0.8
+train = sample(1:nrow(x), n_train)
+val = setdiff(1:nrow(x), train)
+x_train = x[train,,]
+x_val = x[val,,]
+y = as.factor(y)
+class_labels = levels(y)
+y_train = y[train]
+y_val = y[val]
+#one hot encoding
+y = to_categorical(as.integer(y) - 1, num_classes = 19)
+y_train = to_categorical(as.integer(y_train) - 1, num_classes = 19)
+y_val = to_categorical(as.integer(y_val) - 1, num_classes = 19)
+y_test = to_categorical(as.integer(as.factor(y_test)) - 1, num_classes = 19)
+```
+
+I will be using the following **Loss function** ,**Optimizer and Activation Function** for every model.\
+**Loss Function**: **Categorical cross-entropy** is used as this is a **multiclass classification** with **19 activity labels**. It compares fairly well the **predicted probability distribution** (via **softmax**) to the **one-hot encoded ground truth**.\
+**Optimizer**: **RMSprop** is used since it updates **learning rates** for each **parameter**, which is optimal for **time-series sensor data** in which **gradients** are of different magnitudes across **features** and **time steps**.\
+**Activation Function:** I used **Softmax to the output layer** for all the modelsbecause it transforms the final outputs into probability distribution across all 19 activities class and I will be using **ReLU for other layers** because it is computationally efficient and allow model to learn complex patterns by allowing only positive values to pass through. Using ReLU avoids **vanishing gradients, making training more stable**.
+
+#### 1. Penalty Based Regularization DNN Model:
+
+**Architecture**: Three **dense layers**: **128 -\> 64 -\> 32** with **ReLU activation** and **L2 regularization** ( $\lambda$ **= 0.01**). I will be using layer_flatten to convert multi-dimensional sensor output into single long vector as dense layer requires 1D input and I will also be using $\lambda$ = 0.01 because a value like 0.01 offers a **good balance** — it's strong enough to keep the model from **memorizing noise in the training data**, but not so strong that it **underfits by making weights too small**..
+
+**Motivation**:\
+- **Fully connected networks (FCNs)** are strong **general-purpose baselines** and can approximate **complex decision boundaries**. **Slowly reducing neurons** is to focus learning on **high-level, dense features** of interest in capturing **small differences between activity patterns**. **L2 regularization** avoids **overfitting**, which is important when handling **scarce data per category** or **noisy sensor readings**. Suitable for this task as it captures **global patterns** in the **high-dimensional motion data** when **space locality** is not so crucial.\
+
+```{r, warning=FALSE}
+model = keras_model_sequential() |> 
+  layer_flatten(input_shape = c(125, 45)) |>
+  layer_dense(units = 128, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = 0.01)) |>
+  layer_dense(units = 64, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = 0.01)) |>
+  layer_dense(units = 32, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = 0.01)) |>
+  layer_dense(units = 19, activation = "softmax") |>
+  compile(loss = "categorical_crossentropy", optimizer = optimizer_rmsprop(),
+          metrics = "accuracy")
+fit = model |> fit( x = x_train, y = y_train,
+  validation_data = list(x_val, y_val), epochs = 30, verbose = 0)
+plot(fit)
+```
+
+The plot shows **training** and **validation loss** and **accuracy** for the **L2-regularized model** over **30 epochs**. The trend shows **training loss decreases** nicely with epochs, while **validation loss decreases** at the beginning but **slows down** with gradual changes. **Training accuracy rises** and settles gradually, while **validation accuracy rises** first before it enters the phase of **flats with minimal change**. The trend suggests the model can **learn the training samples excellently** but **learns badly consistently with unfamiliar samples**. The curves tend to be **closely positioned** to each other, hinting at **little overfitting**. **Regularization** helps maintain **generalization**, but the model's **learning capacity appears limited**.
+
+```{r}
+train_result_model1 = model |> evaluate(x_train, y_train, verbose = 0)
+test_result_model1 =  model |> evaluate(x_val, y_val, verbose = 0)
+cat("Penalty Based Regularization Model:\n Train data:\n", train_result_model1,
+    "\nValidation data:\n", test_result_model1)
+
+```
+
+#### 2. Dropout Regularization DNN Model:
+
+**Architecture**: Two dense layers: 128 -\> 32 with Dropout(0.3, 0.1) and ReLU activation. I will be using layer_flatten to convert multi-dimensional sensor output into single long vector as dense layer requires 1D input.\
+**Motivation**:\
+- **Dropout** reduces **overfitting** by preventing **co-adaptation of neurons**—optimal when **sensor data** can include **redundant or correlated features**. **Fewer layers** enable **effective training** while still acquiring **discriminative features**. Suitable for this task because **dropout generalizes well** on **unseen movement patterns**, which can vary between **users performing the same activity**.
+
+```{r, warning=FALSE}
+model_dropout = keras_model_sequential() |>
+  layer_flatten(input_shape = c(125, 45)) |>
+  layer_dense(units = 128, activation = "relu") |>
+  layer_dropout(rate = 0.3) |>
+  layer_dense(units = 32, activation = "relu") |>
+  layer_dropout(rate = 0.1) |>
+  layer_dense(units = 19, activation = "softmax") |> 
+  compile( loss = "categorical_crossentropy", optimizer = optimizer_rmsprop(),
+    metrics = "accuracy")
+fit_dropout = model_dropout |> fit( x_train, y_train,
+  validation_data = list(x_val, y_val), epochs = 30, verbose = 0)
+plot(fit_dropout)
+```
+
+The **graph** shows a **smooth and consistent decline** in **validation and training loss**, indicating **consistent learning** throughout. Both the **training and validation sets** show **accuracy increase consistently** and settle with **minimal oscillation**. The **training and validation curves coincide**, indicating **good generalization** and **minimal overfitting**. **Dropout regularization** works well in preventing the model from **relying on some neurons**, making it **robust**. The **learning pattern** indicates the model being **flexible with new data**. The **lower training precision** and **higher validation precision** are a consequence of the **dropout being only enabled during training**, which causes the model to **learn to generalize more at test time without dropout**.
+
+```{r}
+train_result_model2 = model_dropout |> evaluate(x_train, y_train, verbose = 0)
+test_result_model2 =  model_dropout |> evaluate(x_val, y_val, verbose = 0)
+cat("Dropout Regularization Model:\n Train data:\n", train_result_model2,
+    "\nValidation data:\n", test_result_model2)
+```
+
+#### 3. CNN Model:
+
+**Architecture**: **Conv2D(32) -\> MaxPooling -\> Conv2D(64) -\> MaxPooling -\> Flatten -\> Dense(32) -\> Dropout(0.05) -\> Output**. I will be reshaping into shape (samples, height, width, channels) this allows the CNN to treat each **activity** **record like an image** and learn meaningful features from the structure. I will also be using **layer_conv_2d** since we reshaped it like an image.\
+**Motivation**:\
+- **CNNs** are ideally suited to data like **motion sequences**, where **local sensor-channel and temporal interactions** are significant. **Convolutions** allow **activity-specific motion patterns** (e.g., **repeated gestures or intensity peaks**) to be discovered, and **pooling layers** reduce **dimensionality** and improve **robustness**. **Dropout** provides **mild regularization** without interfering with **convolutional pattern acquisition**.
+
+```{r, warning=FALSE}
+x_cnn = array_reshape(x, c(dim(x)[1], 125, 45, 1))
+x_train_cnn = array_reshape(x_train, c(dim(x_train)[1], 125, 45, 1))
+x_val_cnn = array_reshape(x_val, c(dim(x_val)[1], 125, 45, 1))
+x_test_cnn = array_reshape(x_test, c(dim(x_test)[1], 125, 45, 1))
+model_cnn = keras_model_sequential() |>
+  layer_conv_2d(filter = 32, kernel_size = c(2,2), activation = "relu",
+                input_shape =  c(125, 45, 1)) |>
+  layer_max_pooling_2d(pool_size = c(2,2)) |>
+  layer_conv_2d(filter = 64, kernel_size = c(2,2), activation = "relu") |>
+  layer_max_pooling_2d(pool_size = c(2,2)) |>
+  layer_flatten() |>
+  layer_dense(units = 32, activation = "relu") |>
+  layer_dropout(rate = 0.05) |>
+  layer_dense(units = 19, activation = "softmax") |> 
+  compile( loss = "categorical_crossentropy", optimizer = optimizer_rmsprop(),
+    metrics = "accuracy")
+fit_cnn = model_cnn |> fit( x_train_cnn, y_train,
+  validation_data = list(x_val_cnn, y_val), epochs = 30, verbose = 0)
+plot(fit_cnn)
+```
+
+```{r}
+
+```
+
+The **graph** shows a **sharp decrease** in **training and validation loss** in **early epochs** followed by **convergence**, which suggests **fast and efficient learning**. **Accuracy graphs** of both **data sets** rise **very fast** and **converge** with **minimal deviation**. The fact that the **curves are so close** to each other suggests **good generalization** and **good-stable performance**. There is **no overfitting** of the model, and **learning is constant**. The **convolutional architecture** appears to be **optimally suited** to the **detection of structured patterns** in the data.
+
+```{r}
+train_result_model3 = model_cnn |> evaluate(x_train_cnn, y_train, verbose = 0)
+test_result_model3 =  model_cnn |> evaluate(x_val_cnn, y_val, verbose = 0)
+cat("Convolutional Neural Network Model:\n Train data:\n", train_result_model3,
+    "\nValidation data:\n", test_result_model3)
+```
+
+```{r}
+model_comparison = data.frame(
+  Model = c("L2_Regularization", "Dropout_Regularization", "Convolutional Neural Network"),
+  Test_Accuracy = c(
+    test_result_model1[['accuracy']],
+    test_result_model2[['accuracy']],
+    test_result_model3[['accuracy']]))
+best_model_idx = which.max(model_comparison$Test_Accuracy)
+best_model_name = model_comparison$Model[best_model_idx]
+cat("The best model is:", best_model_name, 
+    "with validation accuracy:", model_comparison$Test_Accuracy[best_model_idx], "\n")
+```
+
+```{r, echo=FALSE}
+cat("\nTo predict human behavior from motion sensor data, I tried three different deep 
+learning models: a fully connected model with L2 regularization, a dropout model, 
+and a convolutional neural network (CNN).
+
+The first model used L2 regularization to avoid overfitting by keeping the weights 
+small. It was well accurate on test data (around ",test_result_model1[['accuracy']]*100,"%), but it treated the 
+input as a single vector and not as individual pieces for each sensor, so it was 
+unable to properly learn the patterns in time or between sensors. The second model 
+used dropout instead of L2. Dropout just randomly turns off some neurons during 
+training, and the model is not too reliant on particular connections. This had 
+caused a sharp boost in accuracy (approximately ",test_result_model2[['accuracy']]*100,"%), showing that 
+dropout had helped the model to generalize better. Yet this model still wasn't 
+leveraging the pattern in the sensor data to its full potential.
+
+The third model—a CNN—was different yet again. It reformed the data so the time 
+steps and sensor features were different from one another, and it employed 
+convolutional layers. This allowed the model to pick up useful patterns across 
+time and across sensors. Pooling layers helped reduce the model size and prevent 
+overfitting, and a small dropout added some regularization. The CNN performed best, 
+with approximately ", test_result_model3[['accuracy']]*100 ,"% accuracy on the 
+test set. It was clearly better at recognizing the correct patterns in the input.
+
+Briefly, the fully connected networks worked well with regularization but the CNN 
+worked best as it could understand both sensor and time relationships in the data. 
+This makes it the ideal choice for this type of activity recognition task.
+
+Thus we choose our best model as Convolutional Neural Network.")
+```
+
+### Question 2
+
+```{r}
+model_cnn = keras_model_sequential() |>
+  layer_conv_2d(filter = 32, kernel_size = c(2,2), activation = "relu",
+                input_shape =  c(125, 45, 1)) |>
+  layer_max_pooling_2d(pool_size = c(2,2)) |>
+  layer_conv_2d(filter = 64, kernel_size = c(2,2), activation = "relu") |>
+  layer_max_pooling_2d(pool_size = c(2,2)) |>
+  layer_flatten() |>
+  layer_dense(units = 32, activation = "relu") |>
+  layer_dropout(rate = 0.05) |>
+  layer_dense(units = 19, activation = "softmax") |> 
+  compile( loss = "categorical_crossentropy", optimizer = optimizer_rmsprop(),
+    metrics = "accuracy")
+fit_cnn_test = model_cnn |> fit(x_cnn, y,
+  validation_data = list(x_test_cnn, y_test), epochs = 30,verbose = 0)
+```
+
+```{r}
+plot(fit_cnn_test)
+```
+
+The **plot** shows **smooth, synchronized decrease** of **training and test loss** with both lines **flattening**, and there is **convergence**. There is **rapid growth in accuracy** in the beginning and **not much difference** between **training and test curves** later. Both the **lines for loss and accuracy** being in **close proximity** reflects **high generalization**. The model **learns patterns** from the **whole training set correctly** and **generalizes well** on new **test cases**. **Training is stable** and there is **no overfitting**.
+
+```{r}
+calculate_confusion_matrix = function(y_true, y_pred) {
+  conf_matrix = table(Predicted = y_pred, Actual = y_true)
+  accuracy = sum(diag(conf_matrix)) / sum(conf_matrix)
+  precision = diag(conf_matrix) / rowSums(conf_matrix)
+  recall = diag(conf_matrix) / colSums(conf_matrix)
+  f1_score = 2 * precision * recall / (precision + recall)
+  return(list(
+    confusion_matrix = conf_matrix,
+    accuracy = accuracy,
+    precision = precision,
+    recall = recall,
+    f1_score = f1_score))
+}
+y_raw = max.col(y_test) - 1
+class_hat = model_cnn |> predict(x_test_cnn, verbose = 0) |> max.col() - 1
+conf_result = calculate_confusion_matrix(y_raw, class_hat)
+precision = conf_result$precision
+recall = conf_result$recall
+f1 = conf_result$f1_score
+cat("Test Accuracy:", conf_result$accuracy)
+cat("\nConfusion Matrix:\n")
+print(conf_result$confusion_matrix)
+class_metrics = data.frame(  Activity = class_labels,
+  Precision = precision,  Recall = recall,  F1_Score = f1)
+sorted_metrics = class_metrics[order(class_metrics$F1_Score), ]
+cat("\n\nMost challenging activities to classify:")
+print(head(sorted_metrics, 5))
+print("Easiest activities to classify:")
+print(tail(sorted_metrics[order(sorted_metrics$F1_Score), ],5))
+```
+
+The **best model**, the **CNN**, was tested on **unseen data** and performed **very accurately**, showing that it can **well predict most activities**.
+
+From the **confusion matrix**, we can see that for almost all types of activities, the model **predicted the correct class** with **minimal or no confusion**. Most of the values are on the **diagonal**, showing predictions were **consistent with true labels**.
+
+Some activities were **tougher to categorize**. For example, **"moving_elevator"** had the **poorest F1 score**, followed by **"stand_elevator"**. Such activities likely entail **similar, tiny body movements** and are therefore more **challenging to pick out**. Despite this, the model was still **very precise** and **highly recallful** of them.
+
+Several activities were classified **perfectly**, with **precision, recall, and F1 scores** all **equal to 1.0**. These include relatively distinct and consistent activities like **sitting, standing, lying down, rowing, or walking on a treadmill**. These activities likely have **more distinctive or normal motion patterns**, enabling the model to **learn and classify them flawlessly**.
+
+Overall, the **CNN model performs extremely well** across a **broad spectrum of activities**. It excels at recognizing both **dynamic and static movements**, though it still finds **very similar actions somewhat challenging**.
